@@ -6,6 +6,8 @@ package provider
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -41,6 +43,7 @@ type ServerResourceModel struct {
 	PlanID       types.Int64  `tfsdk:"plan_id"`
 	LocationID   types.Int64  `tfsdk:"location_id"`
 	Template     types.String `tfsdk:"template"`
+	SSHKeyIDs    types.String `tfsdk:"ssh_key_ids"`
 }
 
 func NewServerResource() resource.Resource {
@@ -73,6 +76,11 @@ func (r *ServerResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 			"template": schema.StringAttribute{
 				Required:            true,
 				MarkdownDescription: "OS template slug (see `cloudblast_templates` data source).",
+			},
+			"ssh_key_ids": schema.StringAttribute{
+				Optional:            true,
+				Computed:            true,
+				MarkdownDescription: "Comma-separated list of SSH key IDs to install during provisioning (e.g. `1,2,3`). Obtain IDs from `cloudblast_ssh_key` resources.",
 			},
 			"hostname": schema.StringAttribute{
 				Optional:            true,
@@ -134,6 +142,16 @@ func (r *ServerResource) Create(ctx context.Context, req resource.CreateRequest,
 	}
 	if !data.Hostname.IsNull() && !data.Hostname.IsUnknown() {
 		params.Hostname = data.Hostname.ValueString()
+	}
+
+	// Parse ssh_key_ids (comma-separated)
+	if !data.SSHKeyIDs.IsNull() && !data.SSHKeyIDs.IsUnknown() && data.SSHKeyIDs.ValueString() != "" {
+		for _, s := range strings.Split(data.SSHKeyIDs.ValueString(), ",") {
+			s = strings.TrimSpace(s)
+			if id, err := strconv.Atoi(s); err == nil {
+				params.SSHKeyIDs = append(params.SSHKeyIDs, id)
+			}
+		}
 	}
 
 	server, err := r.client.CreateServer(ctx, params)
@@ -267,12 +285,12 @@ func (r *ServerResource) ImportState(ctx context.Context, req resource.ImportSta
 	ipv4, ipv6 := extractIPs(server.IPAddresses)
 
 	data := ServerResourceModel{
-		ID:         types.StringValue(server.UUID),
-		Hostname:   types.StringValue(server.Hostname),
-		IPv4:       types.StringValue(ipv4),
-		IPv6:       types.StringValue(ipv6),
-		OS:         types.StringValue(server.OS),
-		CreatedAt:  types.StringValue(server.CreatedAt),
+		ID:        types.StringValue(server.UUID),
+		Hostname:  types.StringValue(server.Hostname),
+		IPv4:      types.StringValue(ipv4),
+		IPv6:      types.StringValue(ipv6),
+		OS:        types.StringValue(server.OS),
+		CreatedAt: types.StringValue(server.CreatedAt),
 	}
 
 	if server.Status != nil {

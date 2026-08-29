@@ -1,4 +1,3 @@
-
 package provider
 
 import (
@@ -42,7 +41,7 @@ func (r *SSHKeyResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 			"id": schema.Int64Attribute{
 				Computed:            true,
 				MarkdownDescription: "SSH key ID.",
-				PlanModifiers: []planmodifier.Int64{
+				PlanModifiers:       []planmodifier.Int64{
 					// No UseStateForUnknown for int64 in framework — computed is fine
 				},
 			},

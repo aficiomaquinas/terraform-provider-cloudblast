@@ -44,9 +44,9 @@ func (d *LocationsDataSource) Schema(_ context.Context, _ datasource.SchemaReque
 				Computed: true,
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
-						"id":          schema.Int64Attribute{Computed: true},
-						"short_code":  schema.StringAttribute{Computed: true},
-						"description": schema.StringAttribute{Computed: true},
+						"id":           schema.Int64Attribute{Computed: true},
+						"short_code":   schema.StringAttribute{Computed: true},
+						"description":  schema.StringAttribute{Computed: true},
 						"out_of_stock": schema.BoolAttribute{Computed: true},
 					},
 				},

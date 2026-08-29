@@ -1,4 +1,3 @@
-
 package provider
 
 import (
@@ -57,8 +56,8 @@ type apiResponse struct {
 }
 
 type apiErrorBody struct {
-	Code    string            `json:"code"`
-	Message string            `json:"message"`
+	Code    string              `json:"code"`
+	Message string              `json:"message"`
 	Details map[string][]string `json:"details,omitempty"`
 }
 
@@ -139,22 +138,23 @@ type CreateServerParams struct {
 	LocationID   int    `json:"location_id"`
 	TemplateSlug string `json:"template_slug"`
 	Hostname     string `json:"hostname,omitempty"`
+	SSHKeyIDs    []int  `json:"ssh_key_ids,omitempty"`
 }
 
 type ServerData struct {
-	ID           int            `json:"id"`
-	UUID         string         `json:"uuid"`
-	UUIDShort    string         `json:"uuid_short"`
-	Name         string         `json:"name"`
-	Hostname     string         `json:"hostname"`
-	Status       *string        `json:"status"`
-	CPU          int            `json:"cpu"`
-	Memory       int64          `json:"memory"`
-	Disk         int64          `json:"disk"`
-	NodeID       int            `json:"node_id"`
-	CreatedAt    string         `json:"created_at"`
-	IPAddresses  []ServerIPData `json:"ip_addresses"`
-	OS           string         `json:"os"`
+	ID          int            `json:"id"`
+	UUID        string         `json:"uuid"`
+	UUIDShort   string         `json:"uuid_short"`
+	Name        string         `json:"name"`
+	Hostname    string         `json:"hostname"`
+	Status      *string        `json:"status"`
+	CPU         int            `json:"cpu"`
+	Memory      int64          `json:"memory"`
+	Disk        int64          `json:"disk"`
+	NodeID      int            `json:"node_id"`
+	CreatedAt   string         `json:"created_at"`
+	IPAddresses []ServerIPData `json:"ip_addresses"`
+	OS          string         `json:"os"`
 }
 
 type ServerIPData struct {
@@ -171,9 +171,9 @@ type ServerCredentials struct {
 }
 
 type ServerStatus struct {
-	State         string  `json:"state"`
-	PowerTask     *string `json:"power_task"`
-	ServerStatus  *string `json:"server_status"`
+	State        string  `json:"state"`
+	PowerTask    *string `json:"power_task"`
+	ServerStatus *string `json:"server_status"`
 }
 
 func (c *Client) CreateServer(ctx context.Context, params CreateServerParams) (*ServerData, error) {
@@ -283,12 +283,12 @@ func (c *Client) DeleteSSHKey(ctx context.Context, id int) error {
 // --- Security Group endpoints ---
 
 type SecurityGroupData struct {
-	ID          int              `json:"id"`
-	Name        string           `json:"name"`
-	Description string           `json:"description"`
+	ID          int                `json:"id"`
+	Name        string             `json:"name"`
+	Description string             `json:"description"`
 	Rules       []FirewallRuleData `json:"rules"`
-	Servers     []string         `json:"servers"`
-	CreatedAt   string           `json:"created_at"`
+	Servers     []string           `json:"servers"`
+	CreatedAt   string             `json:"created_at"`
 }
 
 func (c *Client) CreateSecurityGroup(ctx context.Context, name, description string) (*SecurityGroupData, error) {
@@ -398,8 +398,12 @@ type PlanData struct {
 	LocationID     *int    `json:"location_id"`
 }
 
-func (c *Client) ListPlans(ctx context.Context) ([]PlanData, error) {
-	data, err := c.request(ctx, http.MethodGet, "/plans", nil, nil)
+func (c *Client) ListPlans(ctx context.Context, page int) ([]PlanData, error) {
+	query := map[string]string{}
+	if page > 0 {
+		query["page"] = fmt.Sprintf("%d", page)
+	}
+	data, err := c.request(ctx, http.MethodGet, "/plans", nil, query)
 	if err != nil {
 		return nil, err
 	}

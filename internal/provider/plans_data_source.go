@@ -22,11 +22,11 @@ type PlansDataSourceModel struct {
 }
 
 type PlanModel struct {
-	ID           types.Int64  `tfsdk:"id"`
-	Name         types.String `tfsdk:"name"`
-	CPU          types.Int64  `tfsdk:"cpu"`
-	Memory       types.Int64  `tfsdk:"memory"`
-	Disk         types.Int64  `tfsdk:"disk"`
+	ID           types.Int64   `tfsdk:"id"`
+	Name         types.String  `tfsdk:"name"`
+	CPU          types.Int64   `tfsdk:"cpu"`
+	Memory       types.Int64   `tfsdk:"memory"`
+	Disk         types.Int64   `tfsdk:"disk"`
 	MonthlyPrice types.Float64 `tfsdk:"monthly_price"`
 	HourlyPrice  types.Float64 `tfsdk:"hourly_price"`
 }
@@ -77,7 +77,7 @@ func (d *PlansDataSource) Configure(_ context.Context, req datasource.ConfigureR
 func (d *PlansDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
 	var data PlansDataSourceModel
 
-	plans, err := d.client.ListPlans(ctx)
+	plans, err := d.client.ListPlans(ctx, 0)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to list plans", err.Error())
 		return

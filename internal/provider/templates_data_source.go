@@ -18,8 +18,8 @@ type TemplatesDataSource struct {
 }
 
 type TemplatesDataSourceModel struct {
-	LocationID types.Int64      `tfsdk:"location_id"`
-	Templates  []TemplateModel  `tfsdk:"templates"`
+	LocationID types.Int64     `tfsdk:"location_id"`
+	Templates  []TemplateModel `tfsdk:"templates"`
 }
 
 type TemplateModel struct {
