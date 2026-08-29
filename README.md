@@ -60,11 +60,11 @@ resource "cloudblast_server" "web" {
 
 ## Locations
 
-| ID | Code | Location | Status |
-|---|---|---|---|
-| 1 | `nl` | Amsterdam, NL | Out of stock |
-| 2 | `usa` | Salt Lake City, USA | Available |
-| 4 | `hk` | Hong Kong, HK | Available |
+| ID | Code | Location |
+|---|---|---|
+| 1 | `nl` | Amsterdam, NL |
+| 2 | `usa` | Salt Lake City, USA |
+| 4 | `hk` | Hong Kong, HK |
 
 ## Development
 
