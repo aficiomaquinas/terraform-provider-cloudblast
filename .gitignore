@@ -1,17 +1,28 @@
-# Binaries
+# Terraform provider binary
 terraform-provider-cloudblast
 terraform-provider-cloudblast.exe
 
 # Terraform
-*.tfstate
-*.tfstate.*
 .terraform/
 .terraform.lock.hcl
+.terraform.tfstate.lock.info
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.backup
 crash.log
-override.tf
-override.tf.json
-*_override.tf
-*_override.tf.json
+*.log
+
+# Environment / secrets
+.env*
+!.env.example
+
+# Go
+*.test
+*.prof
+/bin/
+/vendor/
+/dist/
 
 # IDE
 .idea/
@@ -19,10 +30,12 @@ override.tf.json
 *.swp
 *.swo
 *~
+*.iml
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Go
-vendor/
+# Test fixtures (keep their state for acceptance tests)
+# !testdata/**/.terraform/
+# !testdata/**/*.tfstate
