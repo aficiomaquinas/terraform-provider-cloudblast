@@ -13,22 +13,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - name: Set up Go
-        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v6.0.0
+        uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
           cache: true
       - name: Import GPG key
         id: import_gpg
-        uses: crazy-max/ghaction-import-gpg@cb9bde2e2525e640591a934b1fd28eef1dcaf5e5 # v6.3.0
+        uses: crazy-max/ghaction-import-gpg@v6
         with:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
           passphrase: ${{ secrets.PASSPHRASE }}
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@9ed2f89a662bf1735a48bc8557be29fe9beeff0f # v7.0.0
+        uses: goreleaser/goreleaser-action@v7
         with:
           version: "~> v2"
           args: release --clean
