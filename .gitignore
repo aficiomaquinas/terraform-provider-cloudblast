@@ -1,35 +1,28 @@
-*.dll
-*.exe
-.DS_Store
-example.tf
-terraform.tfplan
-terraform.tfstate
-bin/
-dist/
-modules-dev/
-/pkg/
-website/.vagrant
-website/.bundle
-website/build
-website/node_modules
-.vagrant/
-*.backup
-./*.tfstate
+# Binaries
+terraform-provider-cloudblast
+terraform-provider-cloudblast.exe
+
+# Terraform
+*.tfstate
+*.tfstate.*
 .terraform/
-*.log
-*.bak
+.terraform.lock.hcl
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
 *~
-.*.swp
-.idea
-*.iml
-*.test
-*.iml
 
-website/vendor
+# OS
+.DS_Store
+Thumbs.db
 
-# Test exclusions
-!command/test-fixtures/**/*.tfstate
-!command/test-fixtures/**/.terraform/
-
-# Keep windows files with windows line endings
-*.winfile eol=crlf
+# Go
+vendor/
