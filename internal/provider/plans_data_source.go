@@ -1,3 +1,5 @@
+// Copyright 2026 aficiomaquinas
+// SPDX-License-Identifier: MPL-2.0
 
 package provider
 
@@ -22,11 +24,11 @@ type PlansDataSourceModel struct {
 type PlanModel struct {
 	ID           types.Int64  `tfsdk:"id"`
 	Name         types.String `tfsdk:"name"`
-	VCpus        types.Int64  `tfsdk:"vcpus"`
-	RAM          types.Int64  `tfsdk:"ram"`
+	CPU          types.Int64  `tfsdk:"cpu"`
+	Memory       types.Int64  `tfsdk:"memory"`
 	Disk         types.Int64  `tfsdk:"disk"`
-	MonthlyPrice types.String `tfsdk:"monthly_price"`
-	HourlyPrice  types.String `tfsdk:"hourly_price"`
+	MonthlyPrice types.Float64 `tfsdk:"monthly_price"`
+	HourlyPrice  types.Float64 `tfsdk:"hourly_price"`
 }
 
 func NewPlansDataSource() datasource.DataSource {
@@ -48,11 +50,11 @@ func (d *PlansDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, 
 					Attributes: map[string]schema.Attribute{
 						"id":            schema.Int64Attribute{Computed: true},
 						"name":          schema.StringAttribute{Computed: true},
-						"vcpus":         schema.Int64Attribute{Computed: true},
-						"ram":           schema.Int64Attribute{Computed: true},
-						"disk":          schema.Int64Attribute{Computed: true},
-						"monthly_price": schema.StringAttribute{Computed: true},
-						"hourly_price":  schema.StringAttribute{Computed: true},
+						"cpu":           schema.Int64Attribute{Computed: true},
+						"memory":        schema.Int64Attribute{Computed: true, MarkdownDescription: "Memory in bytes."},
+						"disk":          schema.Int64Attribute{Computed: true, MarkdownDescription: "Disk in bytes."},
+						"monthly_price": schema.Float64Attribute{Computed: true},
+						"hourly_price":  schema.Float64Attribute{Computed: true},
 					},
 				},
 			},
@@ -85,11 +87,11 @@ func (d *PlansDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 		data.Plans = append(data.Plans, PlanModel{
 			ID:           types.Int64Value(int64(p.ID)),
 			Name:         types.StringValue(p.Name),
-			VCpus:        types.Int64Value(int64(p.VCpus)),
-			RAM:          types.Int64Value(p.RAM),
+			CPU:          types.Int64Value(int64(p.CPU)),
+			Memory:       types.Int64Value(p.Memory),
 			Disk:         types.Int64Value(p.Disk),
-			MonthlyPrice: types.StringValue(p.MonthlyPrice),
-			HourlyPrice:  types.StringValue(p.HourlyPrice),
+			MonthlyPrice: types.Float64Value(p.MonthlyPrice),
+			HourlyPrice:  types.Float64Value(p.HourlyPrice),
 		})
 	}
 

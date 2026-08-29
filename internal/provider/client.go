@@ -142,16 +142,27 @@ type CreateServerParams struct {
 }
 
 type ServerData struct {
-	ID           string `json:"id"`
-	ShortID      string `json:"short_id"`
-	Hostname     string `json:"hostname"`
-	Status       string `json:"status"`
-	PlanID       int    `json:"plan_id"`
-	LocationID   int    `json:"location_id"`
-	TemplateSlug string `json:"template_slug"`
-	IPv4         string `json:"ipv4"`
-	IPv6         string `json:"ipv6"`
-	CreatedAt    string `json:"created_at"`
+	ID           int            `json:"id"`
+	UUID         string         `json:"uuid"`
+	UUIDShort    string         `json:"uuid_short"`
+	Name         string         `json:"name"`
+	Hostname     string         `json:"hostname"`
+	Status       *string        `json:"status"`
+	CPU          int            `json:"cpu"`
+	Memory       int64          `json:"memory"`
+	Disk         int64          `json:"disk"`
+	NodeID       int            `json:"node_id"`
+	CreatedAt    string         `json:"created_at"`
+	IPAddresses  []ServerIPData `json:"ip_addresses"`
+	OS           string         `json:"os"`
+}
+
+type ServerIPData struct {
+	Address string  `json:"address"`
+	Type    string  `json:"type"`
+	Gateway string  `json:"gateway"`
+	CIDR    string  `json:"cidr"`
+	RDNS    *string `json:"rdns"`
 }
 
 type ServerCredentials struct {
@@ -160,8 +171,9 @@ type ServerCredentials struct {
 }
 
 type ServerStatus struct {
-	HypervisorStatus string `json:"hypervisor_status"`
-	ApplicationStatus string `json:"application_status"`
+	State         string  `json:"state"`
+	PowerTask     *string `json:"power_task"`
+	ServerStatus  *string `json:"server_status"`
 }
 
 func (c *Client) CreateServer(ctx context.Context, params CreateServerParams) (*ServerData, error) {
@@ -373,13 +385,17 @@ func (c *Client) DetachServerFromGroup(ctx context.Context, groupID int, serverU
 // --- Data Source endpoints ---
 
 type PlanData struct {
-	ID           int    `json:"id"`
-	Name         string `json:"name"`
-	VCpus        int    `json:"vcpus"`
-	RAM          int64  `json:"ram"`
-	Disk         int64  `json:"disk"`
-	MonthlyPrice string `json:"monthly_price"`
-	HourlyPrice  string `json:"hourly_price"`
+	ID             int     `json:"id"`
+	Name           string  `json:"name"`
+	CPU            int     `json:"cpu"`
+	Memory         int64   `json:"memory"`
+	Disk           int64   `json:"disk"`
+	BandwidthLimit int64   `json:"bandwidth_limit"`
+	MonthlyPrice   float64 `json:"monthly_price"`
+	HourlyPrice    float64 `json:"hourly_price"`
+	BackupPrice    string  `json:"backup_price"`
+	BackupLimit    int     `json:"backup_limit"`
+	LocationID     *int    `json:"location_id"`
 }
 
 func (c *Client) ListPlans(ctx context.Context) ([]PlanData, error) {
@@ -396,8 +412,8 @@ func (c *Client) ListPlans(ctx context.Context) ([]PlanData, error) {
 
 type LocationData struct {
 	ID          int    `json:"id"`
-	Name        string `json:"name"`
-	Country     string `json:"country"`
+	ShortCode   string `json:"short_code"`
+	Description string `json:"description"`
 	OutOfStock  bool   `json:"out_of_stock"`
 }
 
@@ -414,9 +430,9 @@ func (c *Client) ListLocations(ctx context.Context) ([]LocationData, error) {
 }
 
 type TemplateData struct {
-	Slug   string `json:"slug"`
-	Name   string `json:"name"`
-	Family string `json:"family"`
+	Slug      string `json:"slug"`
+	Name      string `json:"name"`
+	GroupName string `json:"group_name"`
 }
 
 func (c *Client) ListTemplates(ctx context.Context, locationID int) ([]TemplateData, error) {

@@ -1,3 +1,5 @@
+// Copyright 2026 aficiomaquinas
+// SPDX-License-Identifier: MPL-2.0
 
 package provider
 
@@ -20,10 +22,10 @@ type LocationsDataSourceModel struct {
 }
 
 type LocationModel struct {
-	ID         types.Int64  `tfsdk:"id"`
-	Name       types.String `tfsdk:"name"`
-	Country    types.String `tfsdk:"country"`
-	OutOfStock types.Bool   `tfsdk:"out_of_stock"`
+	ID          types.Int64  `tfsdk:"id"`
+	ShortCode   types.String `tfsdk:"short_code"`
+	Description types.String `tfsdk:"description"`
+	OutOfStock  types.Bool   `tfsdk:"out_of_stock"`
 }
 
 func NewLocationsDataSource() datasource.DataSource {
@@ -43,8 +45,8 @@ func (d *LocationsDataSource) Schema(_ context.Context, _ datasource.SchemaReque
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
 						"id":          schema.Int64Attribute{Computed: true},
-						"name":        schema.StringAttribute{Computed: true},
-						"country":     schema.StringAttribute{Computed: true},
+						"short_code":  schema.StringAttribute{Computed: true},
+						"description": schema.StringAttribute{Computed: true},
 						"out_of_stock": schema.BoolAttribute{Computed: true},
 					},
 				},
@@ -76,10 +78,10 @@ func (d *LocationsDataSource) Read(ctx context.Context, req datasource.ReadReque
 
 	for _, l := range locations {
 		data.Locations = append(data.Locations, LocationModel{
-			ID:         types.Int64Value(int64(l.ID)),
-			Name:       types.StringValue(l.Name),
-			Country:    types.StringValue(l.Country),
-			OutOfStock: types.BoolValue(l.OutOfStock),
+			ID:          types.Int64Value(int64(l.ID)),
+			ShortCode:   types.StringValue(l.ShortCode),
+			Description: types.StringValue(l.Description),
+			OutOfStock:  types.BoolValue(l.OutOfStock),
 		})
 	}
 

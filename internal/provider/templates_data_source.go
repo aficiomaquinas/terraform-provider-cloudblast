@@ -1,3 +1,5 @@
+// Copyright 2026 aficiomaquinas
+// SPDX-License-Identifier: MPL-2.0
 
 package provider
 
@@ -21,9 +23,9 @@ type TemplatesDataSourceModel struct {
 }
 
 type TemplateModel struct {
-	Slug   types.String `tfsdk:"slug"`
-	Name   types.String `tfsdk:"name"`
-	Family types.String `tfsdk:"family"`
+	Slug      types.String `tfsdk:"slug"`
+	Name      types.String `tfsdk:"name"`
+	GroupName types.String `tfsdk:"group_name"`
 }
 
 func NewTemplatesDataSource() datasource.DataSource {
@@ -46,9 +48,9 @@ func (d *TemplatesDataSource) Schema(_ context.Context, _ datasource.SchemaReque
 				Computed: true,
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
-						"slug":   schema.StringAttribute{Computed: true},
-						"name":   schema.StringAttribute{Computed: true},
-						"family": schema.StringAttribute{Computed: true},
+						"slug":       schema.StringAttribute{Computed: true},
+						"name":       schema.StringAttribute{Computed: true},
+						"group_name": schema.StringAttribute{Computed: true},
 					},
 				},
 			},
@@ -83,9 +85,9 @@ func (d *TemplatesDataSource) Read(ctx context.Context, req datasource.ReadReque
 
 	for _, t := range templates {
 		data.Templates = append(data.Templates, TemplateModel{
-			Slug:   types.StringValue(t.Slug),
-			Name:   types.StringValue(t.Name),
-			Family: types.StringValue(t.Family),
+			Slug:      types.StringValue(t.Slug),
+			Name:      types.StringValue(t.Name),
+			GroupName: types.StringValue(t.GroupName),
 		})
 	}
 

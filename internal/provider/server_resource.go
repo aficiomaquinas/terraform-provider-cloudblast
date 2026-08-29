@@ -1,3 +1,5 @@
+// Copyright 2026 aficiomaquinas
+// SPDX-License-Identifier: MPL-2.0
 
 package provider
 
@@ -29,15 +31,16 @@ type ServerResource struct {
 
 type ServerResourceModel struct {
 	ID           types.String `tfsdk:"id"`
-	PlanID       types.Int64  `tfsdk:"plan_id"`
-	LocationID   types.Int64  `tfsdk:"location_id"`
-	Template     types.String `tfsdk:"template"`
 	Hostname     types.String `tfsdk:"hostname"`
 	Status       types.String `tfsdk:"status"`
 	RootPassword types.String `tfsdk:"root_password"`
 	IPv4         types.String `tfsdk:"ipv4"`
 	IPv6         types.String `tfsdk:"ipv6"`
+	OS           types.String `tfsdk:"os"`
 	CreatedAt    types.String `tfsdk:"created_at"`
+	PlanID       types.Int64  `tfsdk:"plan_id"`
+	LocationID   types.Int64  `tfsdk:"location_id"`
+	Template     types.String `tfsdk:"template"`
 }
 
 func NewServerResource() resource.Resource {
@@ -93,6 +96,10 @@ func (r *ServerResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 				Computed:            true,
 				MarkdownDescription: "Primary IPv6 address.",
 			},
+			"os": schema.StringAttribute{
+				Computed:            true,
+				MarkdownDescription: "Operating system name.",
+			},
 			"created_at": schema.StringAttribute{
 				Computed:            true,
 				MarkdownDescription: "Server creation timestamp.",
@@ -135,36 +142,43 @@ func (r *ServerResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 
-	data.ID = types.StringValue(server.ID)
+	data.ID = types.StringValue(server.UUID)
 	data.CreatedAt = types.StringValue(server.CreatedAt)
+	if server.Hostname != "" {
+		data.Hostname = types.StringValue(server.Hostname)
+	}
 
 	// Poll until installation completes or fails
-	finalStatus, err := r.pollServerStatus(ctx, server.ID)
-	if err != nil {
-		resp.Diagnostics.AddError("Server creation failed", err.Error())
-		return
+	status := ""
+	if server.Status != nil {
+		status = *server.Status
 	}
-	data.Status = types.StringValue(finalStatus)
+	if status == "installing" || status == "" {
+		finalStatus, pollErr := r.pollServerStatus(ctx, server.UUID)
+		if pollErr != nil {
+			resp.Diagnostics.AddError("Server creation failed", pollErr.Error())
+			return
+		}
+		data.Status = types.StringValue(finalStatus)
+	} else {
+		data.Status = types.StringValue(status)
+	}
 
 	// Get full server details (IPs)
-	fullServer, err := r.client.GetServer(ctx, server.ID)
+	fullServer, err := r.client.GetServer(ctx, server.UUID)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to get server details", err.Error())
 		return
 	}
-	data.IPv4 = types.StringValue(fullServer.IPv4)
-	data.IPv6 = types.StringValue(fullServer.IPv6)
-	if fullServer.Hostname != "" {
-		data.Hostname = types.StringValue(fullServer.Hostname)
-	}
+
+	ipv4, ipv6 := extractIPs(fullServer.IPAddresses)
+	data.IPv4 = types.StringValue(ipv4)
+	data.IPv6 = types.StringValue(ipv6)
+	data.OS = types.StringValue(fullServer.OS)
 
 	// Get root password
-	creds, err := r.client.GetServerCredentials(ctx, server.ID)
-	if err != nil {
-		resp.Diagnostics.AddError("Failed to get server credentials", err.Error())
-		return
-	}
-	if creds.RootPassword != nil {
+	creds, err := r.client.GetServerCredentials(ctx, server.UUID)
+	if err == nil && creds.RootPassword != nil {
 		data.RootPassword = types.StringValue(*creds.RootPassword)
 	}
 
@@ -184,13 +198,18 @@ func (r *ServerResource) Read(ctx context.Context, req resource.ReadRequest, res
 		return
 	}
 
-	data.Status = types.StringValue(server.Status)
-	data.IPv4 = types.StringValue(server.IPv4)
-	data.IPv6 = types.StringValue(server.IPv6)
+	if server.Status != nil {
+		data.Status = types.StringValue(*server.Status)
+	}
 	data.Hostname = types.StringValue(server.Hostname)
 	data.CreatedAt = types.StringValue(server.CreatedAt)
+	data.OS = types.StringValue(server.OS)
 
-	// Re-fetch root password (may have been regenerated on reinstall)
+	ipv4, ipv6 := extractIPs(server.IPAddresses)
+	data.IPv4 = types.StringValue(ipv4)
+	data.IPv6 = types.StringValue(ipv6)
+
+	// Re-fetch root password
 	creds, err := r.client.GetServerCredentials(ctx, data.ID.ValueString())
 	if err == nil && creds.RootPassword != nil {
 		data.RootPassword = types.StringValue(*creds.RootPassword)
@@ -200,8 +219,6 @@ func (r *ServerResource) Read(ctx context.Context, req resource.ReadRequest, res
 }
 
 func (r *ServerResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	// Server resource is currently create-only for plan/location/template.
-	// hostname can be updated via rename.
 	var data ServerResourceModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
@@ -221,7 +238,6 @@ func (r *ServerResource) Update(ctx context.Context, req resource.UpdateRequest,
 			resp.Diagnostics.AddError("Failed to rename server", err.Error())
 			return
 		}
-		data.Hostname = types.StringValue(data.Hostname.ValueString())
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
@@ -248,16 +264,19 @@ func (r *ServerResource) ImportState(ctx context.Context, req resource.ImportSta
 		return
 	}
 
+	ipv4, ipv6 := extractIPs(server.IPAddresses)
+
 	data := ServerResourceModel{
-		ID:         types.StringValue(server.ID),
-		PlanID:     types.Int64Value(int64(server.PlanID)),
-		LocationID: types.Int64Value(int64(server.LocationID)),
-		Template:   types.StringValue(server.TemplateSlug),
+		ID:         types.StringValue(server.UUID),
 		Hostname:   types.StringValue(server.Hostname),
-		Status:     types.StringValue(server.Status),
-		IPv4:       types.StringValue(server.IPv4),
-		IPv6:       types.StringValue(server.IPv6),
+		IPv4:       types.StringValue(ipv4),
+		IPv6:       types.StringValue(ipv6),
+		OS:         types.StringValue(server.OS),
 		CreatedAt:  types.StringValue(server.CreatedAt),
+	}
+
+	if server.Status != nil {
+		data.Status = types.StringValue(*server.Status)
 	}
 
 	creds, err := r.client.GetServerCredentials(ctx, id)
@@ -269,11 +288,11 @@ func (r *ServerResource) ImportState(ctx context.Context, req resource.ImportSta
 }
 
 // pollServerStatus waits for a server to reach a terminal state.
-func (r *ServerResource) pollServerStatus(ctx context.Context, serverID string) (string, error) {
+func (r *ServerResource) pollServerStatus(ctx context.Context, serverUUID string) (string, error) {
 	deadline := time.Now().Add(createPollTimeout)
 	for {
 		if time.Now().After(deadline) {
-			return "", fmt.Errorf("timeout waiting for server %s to become ready", serverID)
+			return "", fmt.Errorf("timeout waiting for server %s to become ready", serverUUID)
 		}
 
 		select {
@@ -282,25 +301,41 @@ func (r *ServerResource) pollServerStatus(ctx context.Context, serverID string) 
 		case <-time.After(createPollInterval):
 		}
 
-		status, err := r.client.GetServerStatus(ctx, serverID)
+		status, err := r.client.GetServerStatus(ctx, serverUUID)
 		if err != nil {
 			return "", fmt.Errorf("failed to poll server status: %w", err)
 		}
 
-		appStatus := status.ApplicationStatus
+		appStatus := status.State
+		if status.ServerStatus != nil && *status.ServerStatus != "" {
+			appStatus = *status.ServerStatus
+		}
 		switch appStatus {
-		case "active":
+		case "running":
 			return appStatus, nil
 		case "install_failed", "deleted", "deletion_failed":
-			return appStatus, fmt.Errorf("server %s reached terminal state: %s", serverID, appStatus)
+			return appStatus, fmt.Errorf("server %s reached terminal state: %s", serverUUID, appStatus)
 		default:
-			// installing, restoring_backup, etc. — keep polling
+			// installing, stopped, etc. — keep polling
 		}
 	}
 }
 
+// extractIPs pulls primary IPv4 and IPv6 from the ip_addresses array.
+func extractIPs(ips []ServerIPData) (ipv4, ipv6 string) {
+	for _, ip := range ips {
+		if ip.Type == "ipv4" && ipv4 == "" {
+			ipv4 = ip.Address
+		}
+		if ip.Type == "ipv6" && ipv6 == "" {
+			ipv6 = ip.Address
+		}
+	}
+	return
+}
+
 // renameServer wraps the PATCH /servers/{id}/rename endpoint.
-func (c *Client) renameServer(ctx context.Context, id, name string) error {
-	_, err := c.request(ctx, "PATCH", "/servers/"+id+"/rename", map[string]string{"name": name}, nil)
+func (c *Client) renameServer(ctx context.Context, uuid, name string) error {
+	_, err := c.request(ctx, "PATCH", "/servers/"+uuid+"/rename", map[string]string{"name": name}, nil)
 	return err
 }
