@@ -174,17 +174,31 @@ func (r *SSHKeyResource) ImportState(ctx context.Context, req resource.ImportSta
 		return
 	}
 
-	key, err := r.client.GetSSHKey(ctx, id)
+	// CloudBlast API has no GET /ssh-keys/{id} — use list + filter
+	keys, err := r.client.ListSSHKeys(ctx)
 	if err != nil {
-		resp.Diagnostics.AddError("Failed to import SSH key", err.Error())
+		resp.Diagnostics.AddError("Failed to list SSH keys", err.Error())
 		return
 	}
 
-	data := SSHKeyResourceModel{
-		ID:        types.Int64Value(int64(key.ID)),
-		Name:      types.StringValue(key.Name),
-		PublicKey: types.StringValue(key.PublicKey),
-		CreatedAt: types.StringValue(key.CreatedAt),
+	var data SSHKeyResourceModel
+	found := false
+	for _, key := range keys {
+		if key.ID == id {
+			data = SSHKeyResourceModel{
+				ID:        types.Int64Value(int64(key.ID)),
+				Name:      types.StringValue(key.Name),
+				PublicKey: types.StringValue(key.PublicKey),
+				CreatedAt: types.StringValue(key.CreatedAt),
+			}
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		resp.Diagnostics.AddError("SSH key not found", fmt.Sprintf("SSH key with ID %d not found.", id))
+		return
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
