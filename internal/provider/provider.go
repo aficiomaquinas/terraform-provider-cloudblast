@@ -79,6 +79,7 @@ func (p *CloudBlastProvider) Resources(_ context.Context) []func() resource.Reso
 		NewSSHKeyResource,
 		NewSecurityGroupResource,
 		NewFirewallRuleResource,
+		NewSecurityGroupAttachmentResource,
 	}
 }
 

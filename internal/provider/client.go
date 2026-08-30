@@ -18,7 +18,7 @@ import (
 
 const (
 	defaultBaseURL = "https://console.cloudblast.io/api/v2"
-	defaultTimeout = 30 * time.Second
+	defaultTimeout = 60 * time.Second
 	userAgent      = "terraform-provider-cloudblast"
 )
 
