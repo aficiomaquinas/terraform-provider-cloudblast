@@ -50,8 +50,8 @@ func (r *SSHKeyResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 				MarkdownDescription: "SSH key name.",
 			},
 			"public_key": schema.StringAttribute{
-				Required:            true,
-				Sensitive:           true,
+				Required: true,
+
 				MarkdownDescription: "SSH public key content.",
 			},
 			"created_at": schema.StringAttribute{
@@ -100,17 +100,26 @@ func (r *SSHKeyResource) Read(ctx context.Context, req resource.ReadRequest, res
 		return
 	}
 
-	key, err := r.client.GetSSHKey(ctx, int(data.ID.ValueInt64()))
+	// CloudBlast API has no GET /ssh-keys/{id} — only list all
+	keys, err := r.client.ListSSHKeys(ctx)
 	if err != nil {
-		resp.Diagnostics.AddError("Failed to read SSH key", err.Error())
+		resp.Diagnostics.AddError("Failed to list SSH keys", err.Error())
 		return
 	}
 
-	data.Name = types.StringValue(key.Name)
-	data.PublicKey = types.StringValue(key.PublicKey)
-	data.CreatedAt = types.StringValue(key.CreatedAt)
+	targetID := int(data.ID.ValueInt64())
+	for _, key := range keys {
+		if key.ID == targetID {
+			data.Name = types.StringValue(key.Name)
+			data.PublicKey = types.StringValue(key.PublicKey)
+			data.CreatedAt = types.StringValue(key.CreatedAt)
+			resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+			return
+		}
+	}
 
-	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	// Key not found — remove from state
+	resp.State.RemoveResource(ctx)
 }
 
 func (r *SSHKeyResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {

@@ -69,32 +69,26 @@ func (r *FirewallRuleResource) Schema(_ context.Context, _ resource.SchemaReques
 			},
 			"source": schema.StringAttribute{
 				Optional:            true,
-				Computed:            true,
 				MarkdownDescription: "Source IP/CIDR for inbound rules.",
 			},
 			"destination": schema.StringAttribute{
 				Optional:            true,
-				Computed:            true,
 				MarkdownDescription: "Destination IP/CIDR for outbound rules.",
 			},
 			"source_port": schema.StringAttribute{
 				Optional:            true,
-				Computed:            true,
 				MarkdownDescription: "Source port or range.",
 			},
 			"destination_port": schema.StringAttribute{
 				Optional:            true,
-				Computed:            true,
 				MarkdownDescription: "Destination port or range (e.g., `80`, `8000:9000`).",
 			},
 			"comment": schema.StringAttribute{
 				Optional:            true,
-				Computed:            true,
 				MarkdownDescription: "Rule description/comment.",
 			},
 			"priority": schema.Int64Attribute{
 				Optional:            true,
-				Computed:            true,
 				MarkdownDescription: "Rule priority (lower = higher priority).",
 			},
 		},
@@ -151,37 +145,25 @@ func (r *FirewallRuleResource) Read(ctx context.Context, req resource.ReadReques
 		return
 	}
 
-	groupID, ruleID, err := parseCompositeID(data.ID.ValueString())
+	groupID, _, err := parseCompositeID(data.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Invalid rule ID", err.Error())
 		return
 	}
 
-	sg, err := r.client.GetSecurityGroup(ctx, groupID)
+	// Verify the security group still exists
+	_, err = r.client.GetSecurityGroup(ctx, groupID)
 	if err != nil {
-		resp.Diagnostics.AddError("Failed to read security group", err.Error())
+		// SG deleted — rule is gone, remove from state
+		resp.State.RemoveResource(ctx)
 		return
 	}
 
-	// Find the rule in the security group's rules
-	for _, rule := range sg.Rules {
-		if rule.ID == ruleID {
-			data.Type = types.StringValue(rule.Type)
-			data.Action = types.StringValue(rule.Action)
-			data.Protocol = types.StringValue(rule.Protocol)
-			data.Source = types.StringValue(rule.Source)
-			data.Destination = types.StringValue(rule.Destination)
-			data.SourcePort = types.StringValue(rule.SourcePort)
-			data.DestinationPort = types.StringValue(rule.DestinationPort)
-			data.Comment = types.StringValue(rule.Comment)
-			data.Priority = types.Int64Value(int64(rule.Priority))
-			resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
-			return
-		}
-	}
-
-	// Rule not found — mark for recreation
-	resp.Diagnostics.AddWarning("Rule not found", "Firewall rule no longer exists in security group. It will be recreated.")
+	// The CloudBlast API does not return individual firewall rules
+	// in the GET /security-groups/{id} response. We trust the state
+	// that was set during Create. If the rule was deleted outside
+	// Terraform, this won't detect it — acceptable for this API.
+	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
 func (r *FirewallRuleResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {

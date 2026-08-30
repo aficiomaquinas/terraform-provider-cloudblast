@@ -1,3 +1,6 @@
+// Copyright 2026 aficiomaquinas
+// SPDX-License-Identifier: MPL-2.0
+
 package provider
 
 import (
@@ -8,6 +11,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -61,7 +66,13 @@ type apiErrorBody struct {
 	Details map[string][]string `json:"details,omitempty"`
 }
 
+// apiErrorResponse handles non-standard error formats (e.g., {"message": "..."}).
+type apiErrorResponse struct {
+	Message string `json:"message"`
+}
+
 // request makes an HTTP request to the CloudBlast API.
+// Handles all HTTP status codes and error formats gracefully.
 func (c *Client) request(ctx context.Context, method, path string, body any, query map[string]string) (json.RawMessage, error) {
 	u, err := url.Parse(c.BaseURL + path)
 	if err != nil {
@@ -115,20 +126,70 @@ func (c *Client) request(ctx context.Context, method, path string, body any, que
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
+	// Try to parse as standard API response
 	var apiResp apiResponse
-	if err := json.Unmarshal(respBody, &apiResp); err != nil {
-		return nil, fmt.Errorf("failed to parse response (HTTP %d): %s", resp.StatusCode, string(respBody))
+	json.Unmarshal(respBody, &apiResp) // intentionally ignoring error — handle below
+
+	// Handle error responses (any non-2xx status)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, parseAPIError(resp.StatusCode, respBody, &apiResp)
 	}
 
+	// Handle successful responses
+	if apiResp.Data != nil {
+		return apiResp.Data, nil
+	}
+
+	// 2xx but no data field — try raw body
+	if len(respBody) > 0 {
+		return respBody, nil
+	}
+
+	// 2xx with empty body
+	return nil, nil
+}
+
+// parseAPIError extracts error information from API responses.
+// Handles multiple error formats:
+//   - Standard: {"error": {"code": "...", "message": "..."}}
+//   - Non-standard: {"message": "..."}
+//   - Raw body fallback
+func parseAPIError(statusCode int, body []byte, apiResp *apiResponse) error {
+	// Standard format: {"error": {"code": "...", "message": "..."}}
 	if apiResp.Error != nil {
-		return nil, &APIError{
-			Status:  resp.StatusCode,
+		return &APIError{
+			Status:  statusCode,
 			Code:    apiResp.Error.Code,
 			Message: apiResp.Error.Message,
 		}
 	}
 
-	return apiResp.Data, nil
+	// Non-standard format: {"message": "..."}
+	var errResp apiErrorResponse
+	if json.Unmarshal(body, &errResp) == nil && errResp.Message != "" {
+		return &APIError{
+			Status:  statusCode,
+			Code:    http.StatusText(statusCode),
+			Message: errResp.Message,
+		}
+	}
+
+	// Raw body fallback
+	bodyStr := strings.TrimSpace(string(body))
+	if bodyStr != "" {
+		return &APIError{
+			Status:  statusCode,
+			Code:    http.StatusText(statusCode),
+			Message: bodyStr,
+		}
+	}
+
+	// No body at all
+	return &APIError{
+		Status:  statusCode,
+		Code:    http.StatusText(statusCode),
+		Message: fmt.Sprintf("HTTP %d with empty response body", statusCode),
+	}
 }
 
 // --- Server endpoints ---
@@ -283,12 +344,10 @@ func (c *Client) DeleteSSHKey(ctx context.Context, id int) error {
 // --- Security Group endpoints ---
 
 type SecurityGroupData struct {
-	ID          int                `json:"id"`
-	Name        string             `json:"name"`
-	Description string             `json:"description"`
-	Rules       []FirewallRuleData `json:"rules"`
-	Servers     []string           `json:"servers"`
-	CreatedAt   string             `json:"created_at"`
+	ID          int    `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	CreatedAt   string `json:"created_at"`
 }
 
 func (c *Client) CreateSecurityGroup(ctx context.Context, name, description string) (*SecurityGroupData, error) {
@@ -387,8 +446,8 @@ func (c *Client) DetachServerFromGroup(ctx context.Context, groupID int, serverU
 type PlanData struct {
 	ID             int     `json:"id"`
 	Name           string  `json:"name"`
-	CPU            int     `json:"cpu"`
-	Memory         int64   `json:"memory"`
+	VCpus          int     `json:"vcpus"`
+	RAM            int64   `json:"ram"`
 	Disk           int64   `json:"disk"`
 	BandwidthLimit int64   `json:"bandwidth_limit"`
 	MonthlyPrice   float64 `json:"monthly_price"`
@@ -401,7 +460,7 @@ type PlanData struct {
 func (c *Client) ListPlans(ctx context.Context, page int) ([]PlanData, error) {
 	query := map[string]string{}
 	if page > 0 {
-		query["page"] = fmt.Sprintf("%d", page)
+		query["page"] = strconv.Itoa(page)
 	}
 	data, err := c.request(ctx, http.MethodGet, "/plans", nil, query)
 	if err != nil {

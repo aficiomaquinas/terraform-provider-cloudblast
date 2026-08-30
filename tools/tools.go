@@ -1,4 +1,5 @@
 //go:build generate
+
 package tools
 
 import (
