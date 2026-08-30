@@ -79,7 +79,6 @@ func (r *ServerResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 			},
 			"ssh_key_ids": schema.StringAttribute{
 				Optional:            true,
-				Computed:            true,
 				MarkdownDescription: "Comma-separated list of SSH key IDs to install during provisioning (e.g. `1,2,3`). Obtain IDs from `cloudblast_ssh_key` resources.",
 			},
 			"hostname": schema.StringAttribute{
