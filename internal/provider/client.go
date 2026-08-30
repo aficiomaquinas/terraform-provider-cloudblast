@@ -128,7 +128,7 @@ func (c *Client) request(ctx context.Context, method, path string, body any, que
 
 	// Try to parse as standard API response
 	var apiResp apiResponse
-	json.Unmarshal(respBody, &apiResp) // intentionally ignoring error — handle below
+	_ = json.Unmarshal(respBody, &apiResp)
 
 	// Handle error responses (any non-2xx status)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
