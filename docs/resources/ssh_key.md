@@ -18,7 +18,7 @@ Manages a CloudBlast SSH key.
 ### Required
 
 - `name` (String) SSH key name.
-- `public_key` (String, Sensitive) SSH public key content.
+- `public_key` (String) SSH public key content.
 
 ### Read-Only
 
