@@ -134,6 +134,11 @@ func (r *ServerResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 
+	// Normalize hostname to lowercase — CloudBlast API lowercases hostnames
+	if !data.Hostname.IsNull() && !data.Hostname.IsUnknown() {
+		data.Hostname = types.StringValue(strings.ToLower(data.Hostname.ValueString()))
+	}
+
 	params := CreateServerParams{
 		PlanID:       int(data.PlanID.ValueInt64()),
 		LocationID:   int(data.LocationID.ValueInt64()),
