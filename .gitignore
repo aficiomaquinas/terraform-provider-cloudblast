@@ -39,3 +39,4 @@ Thumbs.db
 # Test fixtures (keep their state for acceptance tests)
 # !testdata/**/.terraform/
 # !testdata/**/*.tfstate
+*.hermes-tmp
