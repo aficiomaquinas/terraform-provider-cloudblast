@@ -140,7 +140,7 @@ func (r *ServerResource) Create(ctx context.Context, req resource.CreateRequest,
 		TemplateSlug: data.Template.ValueString(),
 	}
 	if !data.Hostname.IsNull() && !data.Hostname.IsUnknown() {
-		params.Hostname = data.Hostname.ValueString()
+		params.Hostname = strings.ToLower(data.Hostname.ValueString())
 	}
 
 	// Parse ssh_key_ids (comma-separated)
