@@ -134,18 +134,13 @@ func (r *ServerResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 
-	// Normalize hostname to lowercase — CloudBlast API lowercases hostnames
-	if !data.Hostname.IsNull() && !data.Hostname.IsUnknown() {
-		data.Hostname = types.StringValue(strings.ToLower(data.Hostname.ValueString()))
-	}
-
 	params := CreateServerParams{
 		PlanID:       int(data.PlanID.ValueInt64()),
 		LocationID:   int(data.LocationID.ValueInt64()),
 		TemplateSlug: data.Template.ValueString(),
 	}
 	if !data.Hostname.IsNull() && !data.Hostname.IsUnknown() {
-		params.Hostname = strings.ToLower(data.Hostname.ValueString())
+		params.Hostname = data.Hostname.ValueString()
 	}
 
 	// Parse ssh_key_ids (comma-separated)

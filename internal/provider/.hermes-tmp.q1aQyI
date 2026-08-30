@@ -1,0 +1,36 @@
+// Copyright 2026 aficiomaquinas
+// SPDX-License-Identifier: MPL-2.0
+
+package provider
+
+import (
+	"context"
+	"strings"
+
+	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/path"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/types"
+)
+
+// LowercasePlanModifier returns a plan modifier that converts a string value to lowercase.
+func LowercasePlanModifier() planmodifier.String {
+	return lowercasePlanModifier{}
+}
+
+type lowercasePlanModifier struct{}
+
+func (m lowercasePlanModifier) Description(_ context.Context) string {
+	return "Converts the value to lowercase."
+}
+
+func (m lowercasePlanModifier) MarkdownDescription(ctx context.Context) string {
+	return m.Description(ctx)
+}
+
+func (m lowercasePlanModifier) PlanModifyString(_ context.Context, req planmodifier.StringRequest, resp *planmodifier.StringResponse) {
+	if req.PlanValue.IsUnknown() || req.PlanValue.IsNull() {
+		return
+	}
+	resp.PlanValue = types.StringValue(strings.ToLower(req.PlanValue.ValueString()))
+}
