@@ -60,16 +60,16 @@ resource "cloudblast_server" "web" {
 
 ## Locations
 
-| ID | Code | Location | Availability |
-|---|---|---|---|
-| 1 | `nl` | Amsterdam, NL | Available |
-| 2 | `usa` | Salt Lake City, USA | Out of stock |
-| 4 | `hk` | Hong Kong, HK | Out of stock |
-| 5 | `uk` | Birmingham, UK | Available |
+| ID | Code | Location |
+|---|---|---|
+| 1 | `nl` | Amsterdam, NL |
+| 2 | `usa` | Salt Lake City, USA |
+| 4 | `hk` | Hong Kong, HK |
+| 5 | `uk` | Birmingham, UK |
 
-> **Note:** Location availability (stock) changes over time. This table is a static
-> snapshot for reference. For live availability, query the `cloudblast_locations`
-> data source, which exposes an `out_of_stock` field for each location.
+> **Note:** Location availability (stock) changes over time and is not listed
+> here. For live availability, query the `cloudblast_locations` data source,
+> which exposes an `out_of_stock` field for each location.
 
 ## Development
 
