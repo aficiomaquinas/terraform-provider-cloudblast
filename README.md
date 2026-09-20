@@ -44,7 +44,7 @@ resource "cloudblast_ssh_key" "deploy" {
 
 resource "cloudblast_server" "web" {
   plan_id     = 19
-  location_id = 2
+  location_id = 1
   template    = "ubuntu-24.04"
   hostname    = "web-01"
   ssh_key_ids = cloudblast_ssh_key.deploy.id
@@ -60,11 +60,16 @@ resource "cloudblast_server" "web" {
 
 ## Locations
 
-| ID | Code | Location |
-|---|---|---|
-| 1 | `nl` | Amsterdam, NL |
-| 2 | `usa` | Salt Lake City, USA |
-| 4 | `hk` | Hong Kong, HK |
+| ID | Code | Location | Availability |
+|---|---|---|---|
+| 1 | `nl` | Amsterdam, NL | Available |
+| 2 | `usa` | Salt Lake City, USA | Out of stock |
+| 4 | `hk` | Hong Kong, HK | Out of stock |
+| 5 | `uk` | Birmingham, UK | Available |
+
+> **Note:** Location availability (stock) changes over time. This table is a static
+> snapshot for reference. For live availability, query the `cloudblast_locations`
+> data source, which exposes an `out_of_stock` field for each location.
 
 ## Development
 
