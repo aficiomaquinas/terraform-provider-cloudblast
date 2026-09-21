@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
 const (
@@ -48,6 +50,12 @@ type APIError struct {
 	Status  int
 	Code    string
 	Message string
+
+	// Kind is the optional coarse classification of this failure, filled by
+	// populateKind. It does not affect Error()'s output format.
+	Kind ErrorKind
+	// RetryAfter is the optional parsed Retry-After hint from a 429 response.
+	RetryAfter *time.Duration
 }
 
 func (e *APIError) Error() string {
@@ -132,7 +140,28 @@ func (c *Client) request(ctx context.Context, method, path string, body any, que
 
 	// Handle error responses (any non-2xx status)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, parseAPIError(resp.StatusCode, respBody, &apiResp)
+		apiErr := parseAPIError(resp.StatusCode, respBody, &apiResp)
+
+		var errCode, retryAfter string
+		if ae, ok := apiErr.(*APIError); ok {
+			errCode = ae.Code
+			populateKind(ae)
+			if resp.StatusCode == http.StatusTooManyRequests {
+				if ra := resp.Header.Get("Retry-After"); ra != "" {
+					ae.RetryAfter = parseRetryAfter(ra)
+					retryAfter = ra
+				}
+			}
+		}
+
+		tflog.Debug(ctx, "cloudblast api error", map[string]any{
+			"status":      resp.StatusCode,
+			"code":        errCode,
+			"body":        string(respBody),
+			"retry_after": retryAfter,
+		})
+
+		return nil, apiErr
 	}
 
 	// Handle successful responses

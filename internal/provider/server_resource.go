@@ -155,7 +155,7 @@ func (r *ServerResource) Create(ctx context.Context, req resource.CreateRequest,
 
 	server, err := r.client.CreateServer(ctx, params)
 	if err != nil {
-		resp.Diagnostics.AddError("Failed to create server", err.Error())
+		AddAPIErrorDiagnostics(&resp.Diagnostics, "Failed to create server", err)
 		return
 	}
 
@@ -173,7 +173,7 @@ func (r *ServerResource) Create(ctx context.Context, req resource.CreateRequest,
 	if status == "installing" || status == "" {
 		finalStatus, pollErr := r.pollServerStatus(ctx, server.UUID)
 		if pollErr != nil {
-			resp.Diagnostics.AddError("Server creation failed", pollErr.Error())
+			AddAPIErrorDiagnostics(&resp.Diagnostics, "Server creation failed", pollErr)
 			return
 		}
 		data.Status = types.StringValue(finalStatus)
@@ -184,7 +184,7 @@ func (r *ServerResource) Create(ctx context.Context, req resource.CreateRequest,
 	// Get full server details (IPs)
 	fullServer, err := r.client.GetServer(ctx, server.UUID)
 	if err != nil {
-		resp.Diagnostics.AddError("Failed to get server details", err.Error())
+		AddAPIErrorDiagnostics(&resp.Diagnostics, "Failed to get server details", err)
 		return
 	}
 
@@ -211,7 +211,7 @@ func (r *ServerResource) Read(ctx context.Context, req resource.ReadRequest, res
 
 	server, err := r.client.GetServer(ctx, data.ID.ValueString())
 	if err != nil {
-		resp.Diagnostics.AddError("Failed to read server", err.Error())
+		AddAPIErrorDiagnostics(&resp.Diagnostics, "Failed to read server", err)
 		return
 	}
 
@@ -252,7 +252,7 @@ func (r *ServerResource) Update(ctx context.Context, req resource.UpdateRequest,
 	if !data.Hostname.Equal(oldData.Hostname) && !data.Hostname.IsNull() {
 		err := r.client.renameServer(ctx, data.ID.ValueString(), data.Hostname.ValueString())
 		if err != nil {
-			resp.Diagnostics.AddError("Failed to rename server", err.Error())
+			AddAPIErrorDiagnostics(&resp.Diagnostics, "Failed to rename server", err)
 			return
 		}
 	}
@@ -269,7 +269,7 @@ func (r *ServerResource) Delete(ctx context.Context, req resource.DeleteRequest,
 
 	err := r.client.DeleteServer(ctx, data.ID.ValueString())
 	if err != nil {
-		resp.Diagnostics.AddError("Failed to delete server", err.Error())
+		AddAPIErrorDiagnostics(&resp.Diagnostics, "Failed to delete server", err)
 	}
 }
 
