@@ -32,12 +32,14 @@ resource "cloudblast_server" "example" {
 
 ### Optional
 
+- `failover_location_ids` (List of Number) Ordered list of fallback location IDs, tried in order when the primary `location_id` has no available node for the selected plan (`NO_AVAILABLE_NODE`). Duplicates and the primary location are ignored. Omit to disable failover (default). Other failures (e.g. plan out of stock) are never retried in another location.
 - `hostname` (String) Server hostname.
 - `ssh_key_ids` (String) Comma-separated list of SSH key IDs to install during provisioning (e.g. `1,2,3`). Obtain IDs from `cloudblast_ssh_key` resources.
 
 ### Read-Only
 
 - `created_at` (String) Server creation timestamp.
+- `effective_location_id` (Number) Location the server was actually created in. Equals `location_id` unless a failover location was used.
 - `id` (String) Server UUID.
 - `ipv4` (String) Primary IPv4 address.
 - `ipv6` (String) Primary IPv6 address.
