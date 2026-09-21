@@ -39,6 +39,11 @@ const (
 	KindUnknown ErrorKind = "unknown"
 )
 
+// errCodeNoAvailableNode is the CloudBlast API error code reported when a
+// location has no free node for the selected plan. It is the only failure
+// that location failover retries on.
+const errCodeNoAvailableNode = "NO_AVAILABLE_NODE"
+
 // populateKind fills the optional Kind field of an APIError from its Code and
 // Status. Code-based rules take precedence over status-based rules. The
 // Error() string format is intentionally unaffected.
@@ -47,7 +52,7 @@ func populateKind(e *APIError) {
 		return
 	}
 	switch e.Code {
-	case "NO_AVAILABLE_NODE", "PLAN_NOT_AVAILABLE_IN_LOCATION":
+	case errCodeNoAvailableNode, "PLAN_NOT_AVAILABLE_IN_LOCATION":
 		e.Kind = KindCapacity
 		return
 	case "PLAN_OUT_OF_STOCK":

@@ -5,6 +5,7 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -44,6 +46,9 @@ type ServerResourceModel struct {
 	LocationID   types.Int64  `tfsdk:"location_id"`
 	Template     types.String `tfsdk:"template"`
 	SSHKeyIDs    types.String `tfsdk:"ssh_key_ids"`
+
+	FailoverLocationIDs types.List  `tfsdk:"failover_location_ids"`
+	EffectiveLocationID types.Int64 `tfsdk:"effective_location_id"`
 }
 
 func NewServerResource() resource.Resource {
@@ -72,6 +77,20 @@ func (r *ServerResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 			"location_id": schema.Int64Attribute{
 				Required:            true,
 				MarkdownDescription: "Data center location ID (see `cloudblast_locations` data source).",
+			},
+			"failover_location_ids": schema.ListAttribute{
+				Optional:    true,
+				ElementType: types.Int64Type,
+				MarkdownDescription: "Ordered list of fallback location IDs, tried in order when the primary `location_id` has " +
+					"no available node for the selected plan (`NO_AVAILABLE_NODE`). Duplicates and the primary location are ignored. " +
+					"Omit to disable failover (default). Other failures (e.g. plan out of stock) are never retried in another location.",
+			},
+			"effective_location_id": schema.Int64Attribute{
+				Computed:            true,
+				MarkdownDescription: "Location the server was actually created in. Equals `location_id` unless a failover location was used.",
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.UseStateForUnknown(),
+				},
 			},
 			"template": schema.StringAttribute{
 				Required:            true,
@@ -134,28 +153,84 @@ func (r *ServerResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 
-	params := CreateServerParams{
-		PlanID:       int(data.PlanID.ValueInt64()),
-		LocationID:   int(data.LocationID.ValueInt64()),
-		TemplateSlug: data.Template.ValueString(),
-	}
-	if !data.Hostname.IsNull() && !data.Hostname.IsUnknown() {
-		params.Hostname = data.Hostname.ValueString()
-	}
-
-	// Parse ssh_key_ids (comma-separated)
-	if !data.SSHKeyIDs.IsNull() && !data.SSHKeyIDs.IsUnknown() && data.SSHKeyIDs.ValueString() != "" {
-		for _, s := range strings.Split(data.SSHKeyIDs.ValueString(), ",") {
-			s = strings.TrimSpace(s)
-			if id, err := strconv.Atoi(s); err == nil {
-				params.SSHKeyIDs = append(params.SSHKeyIDs, id)
-			}
+	// Build the ordered failover attempt list: primary first, then the
+	// configured fallback locations (deduped, primary excluded). Empty when
+	// failover_location_ids is omitted or contains only the primary.
+	var fallbacks []int64
+	if !data.FailoverLocationIDs.IsNull() && !data.FailoverLocationIDs.IsUnknown() {
+		diags := data.FailoverLocationIDs.ElementsAs(ctx, &fallbacks, false)
+		resp.Diagnostics.Append(diags...)
+		if resp.Diagnostics.HasError() {
+			return
 		}
 	}
+	attempts := buildCreateAttempts(data.LocationID.ValueInt64(), fallbacks)
 
-	server, err := r.client.CreateServer(ctx, params)
-	if err != nil {
+	// Create attempts: fail over ONLY on NO_AVAILABLE_NODE (the primary or a
+	// fallback location has no node for this plan). Any other failure
+	// (auth, validation, plan out of stock, 5xx, network) is terminal.
+	var server *ServerData
+	for i, locID := range attempts {
+		params := CreateServerParams{
+			PlanID:       int(data.PlanID.ValueInt64()),
+			LocationID:   locID,
+			TemplateSlug: data.Template.ValueString(),
+		}
+		if !data.Hostname.IsNull() && !data.Hostname.IsUnknown() {
+			params.Hostname = data.Hostname.ValueString()
+		}
+
+		// Parse ssh_key_ids (comma-separated)
+		if !data.SSHKeyIDs.IsNull() && !data.SSHKeyIDs.IsUnknown() && data.SSHKeyIDs.ValueString() != "" {
+			for _, s := range strings.Split(data.SSHKeyIDs.ValueString(), ",") {
+				s = strings.TrimSpace(s)
+				if id, err := strconv.Atoi(s); err == nil {
+					params.SSHKeyIDs = append(params.SSHKeyIDs, id)
+				}
+			}
+		}
+
+		s, err := r.client.CreateServer(ctx, params)
+		if err == nil {
+			server = s
+			data.EffectiveLocationID = types.Int64Value(int64(locID))
+			if i > 0 {
+				resp.Diagnostics.AddWarning(
+					"Server created in fallback location",
+					fmt.Sprintf("Primary location %d had no available node; server was created in failover location %d.", attempts[0], locID),
+				)
+			}
+			break
+		}
+
+		if shouldFailOver(err) {
+			if i < len(attempts)-1 {
+				resp.Diagnostics.AddWarning(
+					"Location unavailable",
+					fmt.Sprintf("CloudBlast location %d has no available node for plan %d; trying failover location %d.",
+						locID, data.PlanID.ValueInt64(), attempts[i+1]),
+				)
+				continue
+			}
+			// Last attempt failed with NO_AVAILABLE_NODE — fall through to
+			// the exhausted summary error below.
+		}
+
 		AddAPIErrorDiagnostics(&resp.Diagnostics, "Failed to create server", err)
+		return
+	}
+
+	if server == nil {
+		// Failover exhausted: every location returned NO_AVAILABLE_NODE.
+		var b strings.Builder
+		fmt.Fprintf(&b, "CloudBlast has no available node for plan %d in any of the %d attempted location(s):\n\n",
+			data.PlanID.ValueInt64(), len(attempts))
+		fmt.Fprintf(&b, "| Location | Result |\n|---|---|\n")
+		for _, locID := range attempts {
+			fmt.Fprintf(&b, "| %d | NO_AVAILABLE_NODE |\n", locID)
+		}
+		b.WriteString("\nAdd more failover_location_ids, choose a different plan, or try again later.")
+		resp.Diagnostics.AddError("Failed to create server", b.String())
 		return
 	}
 
@@ -257,6 +332,13 @@ func (r *ServerResource) Update(ctx context.Context, req resource.UpdateRequest,
 		}
 	}
 
+	// effective_location_id is create-time only. The framework recomputes it
+	// on update; preserve the recorded value unless the plan already carries
+	// one (UseStateForUnknown normally handles this).
+	if data.EffectiveLocationID.IsNull() || data.EffectiveLocationID.IsUnknown() {
+		data.EffectiveLocationID = oldData.EffectiveLocationID
+	}
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -291,6 +373,11 @@ func (r *ServerResource) ImportState(ctx context.Context, req resource.ImportSta
 		OS:        types.StringValue(server.OS),
 		CreatedAt: types.StringValue(server.CreatedAt),
 	}
+	// The API does not expose the creation location on the server object, so
+	// effective_location_id cannot be derived on import; it stays null, like
+	// the other config attributes in this resource's import.
+	data.FailoverLocationIDs = types.ListNull(types.Int64Type)
+	data.EffectiveLocationID = types.Int64Null()
 
 	if server.Status != nil {
 		data.Status = types.StringValue(*server.Status)
@@ -302,6 +389,30 @@ func (r *ServerResource) ImportState(ctx context.Context, req resource.ImportSta
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+}
+
+// buildCreateAttempts returns the ordered create attempt list: the primary
+// location first, then the configured failover locations in order, with
+// duplicates and the primary itself removed.
+func buildCreateAttempts(primary int64, failoverIDs []int64) []int {
+	attempts := []int{int(primary)}
+	seen := map[int]bool{int(primary): true}
+	for _, id := range failoverIDs {
+		if !seen[int(id)] {
+			seen[int(id)] = true
+			attempts = append(attempts, int(id))
+		}
+	}
+	return attempts
+}
+
+// shouldFailOver reports whether err is a NO_AVAILABLE_NODE capacity error —
+// the only failure for which the create loop tries the next failover
+// location. Everything else (plan out of stock, auth, validation, 5xx,
+// network) is terminal.
+func shouldFailOver(err error) bool {
+	var apiErr *APIError
+	return errors.As(err, &apiErr) && apiErr.Code == errCodeNoAvailableNode
 }
 
 // pollServerStatus waits for a server to reach a terminal state.
