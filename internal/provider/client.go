@@ -488,17 +488,17 @@ func isRetryableServerError(err error) bool {
 }
 
 // attachBackoffWait returns the exponential backoff delay for the given
-// zero-based retry attempt: base * 2^attempt, capped at max.
-func attachBackoffWait(attempt int, base, max time.Duration) time.Duration {
+// zero-based retry attempt: base * 2^attempt, capped at maxWait.
+func attachBackoffWait(attempt int, base, maxWait time.Duration) time.Duration {
 	wait := base
 	for i := 0; i < attempt; i++ {
 		wait *= 2
-		if wait >= max {
-			return max
+		if wait >= maxWait {
+			return maxWait
 		}
 	}
-	if wait > max {
-		return max
+	if wait > maxWait {
+		return maxWait
 	}
 	return wait
 }

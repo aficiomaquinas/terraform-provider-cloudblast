@@ -130,7 +130,7 @@ func TestAttachServerToGroupDoesNotRetryClientErrors(t *testing.T) {
 }
 
 func TestAttachBackoffWait(t *testing.T) {
-	base, max := 2*time.Second, 30*time.Second
+	base, maxWait := 2*time.Second, 30*time.Second
 	tests := []struct {
 		attempt int
 		want    time.Duration
@@ -143,8 +143,8 @@ func TestAttachBackoffWait(t *testing.T) {
 		{10, 30 * time.Second},
 	}
 	for _, tt := range tests {
-		if got := attachBackoffWait(tt.attempt, base, max); got != tt.want {
-			t.Errorf("attachBackoffWait(%d, %s, %s) = %s, want %s", tt.attempt, base, max, got, tt.want)
+		if got := attachBackoffWait(tt.attempt, base, maxWait); got != tt.want {
+			t.Errorf("attachBackoffWait(%d, %s, %s) = %s, want %s", tt.attempt, base, maxWait, got, tt.want)
 		}
 	}
 }
