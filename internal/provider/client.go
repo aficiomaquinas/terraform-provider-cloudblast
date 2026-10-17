@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -22,6 +23,16 @@ const (
 	defaultBaseURL = "https://console.cloudblast.io/api/v2"
 	defaultTimeout = 60 * time.Second
 	userAgent      = "terraform-provider-cloudblast"
+
+	// AttachServerToGroup retries transient 5xx failures with exponential
+	// backoff (base 2s, doubling, capped at 30s, 3 retries = 4 attempts
+	// total, ~14s worst-case extra latency). The attach endpoint is the only
+	// long-running synchronous handler in the pipeline and has failed with
+	// transient 502 origin_bad_gateway responses during upstream incidents
+	// (SporeHarbor/docs/external-issues/2026-09-21_cloudblast-api-502-outage.md).
+	defaultAttachRetries       = 3
+	defaultAttachRetryBaseWait = 2 * time.Second
+	defaultAttachRetryMaxWait  = 30 * time.Second
 )
 
 // Client wraps the CloudBlast REST API v2.
@@ -29,6 +40,13 @@ type Client struct {
 	BaseURL    string
 	Token      string
 	HTTPClient *http.Client
+
+	// attachRetries, attachRetryBaseWait and attachRetryMaxWait tune the
+	// exponential backoff used by AttachServerToGroup. Zero values fall back
+	// to the defaults above; tests override them to keep runs fast.
+	attachRetries       int
+	attachRetryBaseWait time.Duration
+	attachRetryMaxWait  time.Duration
 }
 
 // NewClient creates a new CloudBlast API client.
@@ -54,7 +72,8 @@ type APIError struct {
 	// Kind is the optional coarse classification of this failure, filled by
 	// populateKind. It does not affect Error()'s output format.
 	Kind ErrorKind
-	// RetryAfter is the optional parsed Retry-After hint from a 429 response.
+	// RetryAfter is the optional parsed Retry-After hint from a 429 or 5xx
+	// response.
 	RetryAfter *time.Duration
 }
 
@@ -146,7 +165,9 @@ func (c *Client) request(ctx context.Context, method, path string, body any, que
 		if ae, ok := apiErr.(*APIError); ok {
 			errCode = ae.Code
 			populateKind(ae)
-			if resp.StatusCode == http.StatusTooManyRequests {
+			// 5xx responses may also carry a Retry-After hint (e.g. the
+			// 502 origin_bad_gateway attach failures advertise retry_after).
+			if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
 				if ra := resp.Header.Get("Retry-After"); ra != "" {
 					ae.RetryAfter = parseRetryAfter(ra)
 					retryAfter = ra
@@ -458,10 +479,91 @@ func (c *Client) DeleteFirewallRule(ctx context.Context, groupID, ruleID int) er
 
 // --- Attach/Detach Server to Security Group ---
 
+// isRetryableServerError reports whether err is a transient CloudBlast API
+// server-side failure (HTTP 5xx, taxonomy KindServer). Only those failures are
+// safe to blindly retry; 4xx and auth failures are permanent for a given
+// request, and network errors never reached the API.
+func isRetryableServerError(err error) bool {
+	return classifyErr(err) == KindServer
+}
+
+// attachBackoffWait returns the exponential backoff delay for the given
+// zero-based retry attempt: base * 2^attempt, capped at max.
+func attachBackoffWait(attempt int, base, max time.Duration) time.Duration {
+	wait := base
+	for i := 0; i < attempt; i++ {
+		wait *= 2
+		if wait >= max {
+			return max
+		}
+	}
+	if wait > max {
+		return max
+	}
+	return wait
+}
+
+// AttachServerToGroup attaches a server to a security group. The attach
+// endpoint is the only long-running synchronous handler in the CloudBlast
+// pipeline and intermittently fails with transient 5xx responses (e.g. 502
+// origin_bad_gateway during upstream incidents), so transient server errors
+// are retried with exponential backoff. An explicit Retry-After hint (429 or
+// 5xx) raises the wait, still capped at the configured maximum. Context
+// cancellation aborts the retry loop immediately.
 func (c *Client) AttachServerToGroup(ctx context.Context, groupID int, serverUUID string) error {
 	body := map[string]string{"server_uuid": serverUUID}
-	_, err := c.request(ctx, http.MethodPost, fmt.Sprintf("/security-groups/%d/servers/attach", groupID), body, nil)
-	return err
+	path := fmt.Sprintf("/security-groups/%d/servers/attach", groupID)
+
+	retries := c.attachRetries
+	if retries == 0 {
+		retries = defaultAttachRetries
+	}
+	base := c.attachRetryBaseWait
+	if base == 0 {
+		base = defaultAttachRetryBaseWait
+	}
+	maxWait := c.attachRetryMaxWait
+	if maxWait == 0 {
+		maxWait = defaultAttachRetryMaxWait
+	}
+
+	var err error
+	for attempt := 0; attempt <= retries; attempt++ {
+		_, err = c.request(ctx, http.MethodPost, path, body, nil)
+		if err == nil {
+			return nil
+		}
+		if !isRetryableServerError(err) || attempt == retries {
+			break
+		}
+
+		wait := attachBackoffWait(attempt, base, maxWait)
+		// Honour an explicit Retry-After hint when the API provides one,
+		// mirroring the 429 handling in request(), but never wait longer
+		// than the configured cap.
+		var apiErr *APIError
+		if errors.As(err, &apiErr) && apiErr.RetryAfter != nil && *apiErr.RetryAfter > wait {
+			wait = *apiErr.RetryAfter
+			if wait > maxWait {
+				wait = maxWait
+			}
+		}
+
+		tflog.Warn(ctx, "cloudblast attach failed with transient server error, retrying", map[string]any{
+			"attempt": attempt + 1,
+			"retries": retries,
+			"wait":    wait.String(),
+			"error":   err.Error(),
+		})
+
+		select {
+		case <-time.After(wait):
+		case <-ctx.Done():
+			return fmt.Errorf("attach of server %s to security group %d aborted while waiting to retry: %w", serverUUID, groupID, ctx.Err())
+		}
+	}
+
+	return fmt.Errorf("failed to attach server %s to security group %d after %d attempt(s): %w", serverUUID, groupID, retries+1, err)
 }
 
 func (c *Client) DetachServerFromGroup(ctx context.Context, groupID int, serverUUID string) error {
