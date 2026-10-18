@@ -148,3 +148,54 @@ func TestAttachBackoffWait(t *testing.T) {
 		}
 	}
 }
+
+// TestAttachParsesRetryAfterFromBody covers the 2026-10-17 cortendesk
+// recurrence: Cloudflare's 502 origin_bad_gateway carries the retry hint in
+// the problem+json BODY ({"retryable":true,"retry_after":60,...}) and sends NO
+// Retry-After header. The client must surface it as APIError.RetryAfter so the
+// attach retry loop can wait out the provider's advertised backoff.
+func TestAttachParsesRetryAfterFromBody(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(attach502Body))
+	}))
+	defer srv.Close()
+
+	client := newAttachTestClient(srv.URL)
+	_, err := client.request(context.Background(), http.MethodPost,
+		"/security-groups/386/servers/attach",
+		map[string]string{"server_uuid": "ad980585-6c3d-4ab9-bacd-6be60b713f1a"}, nil)
+	if err == nil {
+		t.Fatal("request() = nil, want 502 APIError")
+	}
+
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("error %v is not (wraps) an *APIError", err)
+	}
+	if apiErr.RetryAfter == nil {
+		t.Fatal("APIError.RetryAfter = nil, want 60s parsed from the problem+json body")
+	}
+	if got := *apiErr.RetryAfter; got != 60*time.Second {
+		t.Errorf("APIError.RetryAfter = %s, want 60s", got)
+	}
+}
+
+// TestBodyRetryAfterRejectsJunk pins bodyRetryAfter's negative paths.
+func TestBodyRetryAfterRejectsJunk(t *testing.T) {
+	if _, ok := bodyRetryAfter([]byte(`{"status":502}`)); ok {
+		t.Error("bodyRetryAfter({status:502}) ok=true, want false (no hint)")
+	}
+	if _, ok := bodyRetryAfter([]byte(`not json`)); ok {
+		t.Error("bodyRetryAfter(not json) ok=true, want false")
+	}
+	if secs, ok := bodyRetryAfter([]byte(`{"retry_after":-5}`)); ok {
+		t.Errorf("bodyRetryAfter(negative) = %d,true, want false", secs)
+	}
+	if secs, ok := bodyRetryAfter([]byte(`{"retry_after":60}`)); !ok || secs != 60 {
+		t.Errorf("bodyRetryAfter(60) = %d,%v, want 60,true", secs, ok)
+	}
+}

@@ -4,6 +4,7 @@
 package provider
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -95,6 +96,24 @@ func parseRetryAfter(v string) *time.Duration {
 		return nil
 	}
 	return nil
+}
+
+// bodyRetryAfter extracts a RFC-9457/Cloudflare problem+json "retry_after"
+// (seconds) hint from a raw error response body. Cloudflare-fronted origin
+// failures (502 origin_bad_gateway on console.cloudblast.io) advertise the
+// hint ONLY in the body — no Retry-After header is sent — so header-only
+// parsing silently drops it. Returns ok=false when no usable hint exists.
+func bodyRetryAfter(body []byte) (int, bool) {
+	var problem struct {
+		RetryAfter *int `json:"retry_after"`
+	}
+	if json.Unmarshal(body, &problem) != nil || problem.RetryAfter == nil {
+		return 0, false
+	}
+	if *problem.RetryAfter < 0 {
+		return 0, false
+	}
+	return *problem.RetryAfter, true
 }
 
 // classifyErr maps an arbitrary error to an ErrorKind. APIErrors are

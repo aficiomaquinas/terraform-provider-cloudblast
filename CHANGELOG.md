@@ -1,3 +1,9 @@
+## 0.2.1
+
+BUG FIXES:
+
+* cloudblast_security_group_attachment: honor the `retry_after` hint Cloudflare embeds in the problem+json BODY of 502 `origin_bad_gateway` responses (no `Retry-After` header is sent) — previously the hint was dropped and the backoff under-waited; retry cap raised 30s → 60s to match the provider's advertised "back off at least 60 seconds" (recurrence of the 2026-09-21 attach-502 outage, observed 2026-10-17 during the cortendesk staging germination)
+
 ## 0.2.0
 
 FEATURES:

@@ -25,14 +25,19 @@ const (
 	userAgent      = "terraform-provider-cloudblast"
 
 	// AttachServerToGroup retries transient 5xx failures with exponential
-	// backoff (base 2s, doubling, capped at 30s, 3 retries = 4 attempts
-	// total, ~14s worst-case extra latency). The attach endpoint is the only
-	// long-running synchronous handler in the pipeline and has failed with
-	// transient 502 origin_bad_gateway responses during upstream incidents
-	// (SporeHarbor/docs/external-issues/2026-09-21_cloudblast-api-502-outage.md).
+	// backoff (base 2s, doubling, capped at 60s, 3 retries = 4 attempts
+	// total, ~3.5min worst-case extra latency). The attach endpoint is the
+	// only long-running synchronous handler in the pipeline and has failed
+	// with transient 502 origin_bad_gateway responses during upstream
+	// incidents (SporeHarbor/docs/external-issues/2026-09-21_cloudblast-api-502-outage.md
+	// and the 2026-10-17 cortendesk recurrence). The cap is 60s — not 30s —
+	// because Cloudflare's problem+json body for these failures explicitly
+	// advertises "retry_after": 60 with "Back off for at least 60 seconds";
+	// a 30s cap truncated the provider's own guidance and re-hit the
+	// unhealthy origin.
 	defaultAttachRetries       = 3
 	defaultAttachRetryBaseWait = 2 * time.Second
-	defaultAttachRetryMaxWait  = 30 * time.Second
+	defaultAttachRetryMaxWait  = 60 * time.Second
 )
 
 // Client wraps the CloudBlast REST API v2.
@@ -171,6 +176,18 @@ func (c *Client) request(ctx context.Context, method, path string, body any, que
 				if ra := resp.Header.Get("Retry-After"); ra != "" {
 					ae.RetryAfter = parseRetryAfter(ra)
 					retryAfter = ra
+				} else if ae.RetryAfter == nil {
+					// Cloudflare-fronted 5xx (origin_bad_gateway) carries the
+					// hint in the problem+json BODY, not in a header — see the
+					// 2026-10-17 cortendesk captures: {"retryable":true,
+					// "retry_after":60,...} with no Retry-After header. Without
+					// body parsing the hint is lost and the retry backoff
+					// under-waits against the provider's own guidance.
+					if secs, ok := bodyRetryAfter(respBody); ok {
+						d := time.Duration(secs) * time.Second
+						ae.RetryAfter = &d
+						retryAfter = strconv.Itoa(secs) + " (body)"
+					}
 				}
 			}
 		}
