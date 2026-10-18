@@ -415,6 +415,23 @@ type SecurityGroupData struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	CreatedAt   string `json:"created_at"`
+
+	// VMCount and Servers are only returned by GET /security-groups/{id}
+	// (the create response carries none of them). They back the
+	// verify-after-502 read in AttachServerToGroup: the group's servers[]
+	// membership list is the server-side truth of whether an attach
+	// actually committed.
+	VMCount *int                      `json:"vm_count,omitempty"`
+	Servers []SecurityGroupServerData `json:"servers,omitempty"`
+}
+
+// SecurityGroupServerData is one entry of a security group's servers[]
+// membership list, as returned by GET /security-groups/{id}
+// ({"uuid":..., "uuid_short":..., "name":...}).
+type SecurityGroupServerData struct {
+	UUID      string `json:"uuid"`
+	UUIDShort string `json:"uuid_short"`
+	Name      string `json:"name"`
 }
 
 func (c *Client) CreateSecurityGroup(ctx context.Context, name, description string) (*SecurityGroupData, error) {
@@ -520,13 +537,58 @@ func attachBackoffWait(attempt int, base, maxWait time.Duration) time.Duration {
 	return wait
 }
 
+// serverAttachedToGroup is the verify-after-502 read: it GETs the security
+// group and reports whether serverUUID appears in its servers[] membership
+// list. CloudBlast's attach handler has been observed to COMMIT the
+// membership and then die before writing the response — Cloudflare answers
+// with origin_bad_gateway 502, the write committed and the ack was lost
+// (SporeHarbor/docs/external-issues/2026-10-18_cloudblast-attach-502-formal-reproduction.md).
+// A transient-5xx verification read is retried once after the base backoff,
+// because the GET shares the very origin that produced the attach 502.
+// verified=false means membership could not be determined, so callers must
+// fall back to the original attach error instead of guessing.
+func (c *Client) serverAttachedToGroup(ctx context.Context, groupID int, serverUUID string) (attached bool, verified bool) {
+	wait := c.attachRetryBaseWait
+	if wait == 0 {
+		wait = defaultAttachRetryBaseWait
+	}
+	for attempt := 0; ; attempt++ {
+		sg, err := c.GetSecurityGroup(ctx, groupID)
+		if err == nil {
+			for _, member := range sg.Servers {
+				if strings.EqualFold(member.UUID, serverUUID) {
+					return true, true
+				}
+			}
+			return false, true
+		}
+		if !isRetryableServerError(err) || attempt >= 1 {
+			return false, false
+		}
+		tflog.Warn(ctx, "cloudblast attach verification read failed with transient server error, retrying", map[string]any{
+			"group_id": groupID,
+			"error":    err.Error(),
+		})
+		select {
+		case <-time.After(wait):
+		case <-ctx.Done():
+			return false, false
+		}
+	}
+}
+
 // AttachServerToGroup attaches a server to a security group. The attach
 // endpoint is the only long-running synchronous handler in the CloudBlast
 // pipeline and intermittently fails with transient 5xx responses (e.g. 502
 // origin_bad_gateway during upstream incidents), so transient server errors
 // are retried with exponential backoff. An explicit Retry-After hint (429 or
 // 5xx) raises the wait, still capped at the configured maximum. Context
-// cancellation aborts the retry loop immediately.
+// cancellation aborts the retry loop immediately. When the loop is exhausted
+// on a 5xx, verify-after-502 reads the group back: if the server IS in the
+// membership list the handler committed the write and lost only the ack, so
+// the attach reports success ("attach verified server-side after 502");
+// otherwise the original error surfaces unchanged. Non-5xx failures never
+// trigger the verification read.
 func (c *Client) AttachServerToGroup(ctx context.Context, groupID int, serverUUID string) error {
 	body := map[string]string{"server_uuid": serverUUID}
 	path := fmt.Sprintf("/security-groups/%d/servers/attach", groupID)
@@ -577,6 +639,33 @@ func (c *Client) AttachServerToGroup(ctx context.Context, groupID int, serverUUI
 		case <-time.After(wait):
 		case <-ctx.Done():
 			return fmt.Errorf("attach of server %s to security group %d aborted while waiting to retry: %w", serverUUID, groupID, ctx.Err())
+		}
+	}
+
+	// Verify-after-502. Only a transient server-side failure reaches this
+	// point with an attach that may still have COMMITTED: the CloudBlast
+	// origin has been observed dying after writing the membership but
+	// before writing the response (ack lost, Cloudflare origin_bad_gateway
+	// 502) — so a read-back is the only honest verdict. Confirmed
+	// membership => success; confirmed absence or an unreadable group =>
+	// the original error, exactly as before. Non-5xx failures skip this
+	// entirely.
+	if isRetryableServerError(err) {
+		attached, verified := c.serverAttachedToGroup(ctx, groupID, serverUUID)
+		if verified && attached {
+			tflog.Warn(ctx, "attach verified server-side after 502", map[string]any{
+				"group_id":    groupID,
+				"server_uuid": serverUUID,
+				"attempts":    retries + 1,
+				"last_error":  err.Error(),
+			})
+			return nil
+		}
+		if verified {
+			tflog.Warn(ctx, "attach not verified server-side after 502: server absent from security group membership", map[string]any{
+				"group_id":    groupID,
+				"server_uuid": serverUUID,
+			})
 		}
 	}
 

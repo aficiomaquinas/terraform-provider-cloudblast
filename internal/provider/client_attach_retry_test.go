@@ -67,9 +67,17 @@ func TestAttachServerToGroupRetriesOn502ThenSucceeds(t *testing.T) {
 }
 
 func TestAttachServerToGroupPersistent5xxFailsAfterRetries(t *testing.T) {
-	var calls atomic.Int32
+	var attachCalls, verifyGets atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls.Add(1)
+		// Count attach POSTs only: after retry exhaustion the client now
+		// performs the verify-after-502 read (GET the group), and that
+		// read also 502s here — it must not be counted as an attach
+		// attempt. The verification read itself is asserted below.
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/servers/attach") {
+			attachCalls.Add(1)
+		} else if r.Method == http.MethodGet {
+			verifyGets.Add(1)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadGateway)
 		_, _ = w.Write([]byte(attach502Body))
@@ -83,8 +91,14 @@ func TestAttachServerToGroupPersistent5xxFailsAfterRetries(t *testing.T) {
 	}
 
 	wantCalls := int32(1 + defaultAttachRetries)
-	if got := calls.Load(); got != wantCalls {
-		t.Fatalf("server received %d calls, want %d (initial + %d retries)", got, wantCalls, defaultAttachRetries)
+	if got := attachCalls.Load(); got != wantCalls {
+		t.Fatalf("server received %d attach calls, want %d (initial + %d retries)", got, wantCalls, defaultAttachRetries)
+	}
+	// The verify-after-502 read ran (and could not confirm membership
+	// because this server 502s every request), so the original error
+	// surfaced instead of a false success.
+	if got := verifyGets.Load(); got == 0 {
+		t.Error("server received no verification GET, want at least one verify-after-502 read")
 	}
 
 	// The error must stay in the repo's taxonomy: a KindServer APIError whose

@@ -1,3 +1,9 @@
+## 0.2.2
+
+BUG FIXES:
+
+* cloudblast_security_group_attachment: verify-after-502 — when the attach retry loop is exhausted on a 5xx (e.g. 502 `origin_bad_gateway`), the provider now GETs the security group back and, if the server IS in its `servers[]` membership list, reports success instead of an error: the CloudBlast attach handler commits the membership and then dies before writing the response (write committed, ack lost), so a 502 can carry a successful attach. Confirmed absence — or an unreadable group — still surfaces the original retry-exhaustion error, and non-5xx failures never trigger the verification read (evidence: SporeHarbor/docs/external-issues/2026-10-18_cloudblast-attach-502-formal-reproduction.md, cortendesk staging germination)
+
 ## 0.2.1
 
 BUG FIXES:
