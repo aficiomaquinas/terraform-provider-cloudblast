@@ -6,6 +6,13 @@ on:
   schedule:
     - cron: '43 20 * * *'
 
+# Locking issues/PRs needs write on both; without this block the default
+# GITHUB_TOKEN is read-only and every run dies with
+# "Resource not accessible by integration" on the first lock call.
+permissions:
+  issues: write
+  pull-requests: write
+
 jobs:
   lock:
     runs-on: ubuntu-latest
