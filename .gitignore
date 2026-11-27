@@ -40,3 +40,5 @@ Thumbs.db
 # !testdata/**/.terraform/
 # !testdata/**/*.tfstate
 *.hermes-tmp
+
+.offline-markdown-preview

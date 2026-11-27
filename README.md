@@ -1,6 +1,6 @@
 # Terraform Provider CloudBlast
 
-![Terraform Provider Downloads](https://img.shields.io/terraform/provider/dt/2312176?logo=terraform&logoColor=white&label=total%20downloads&color=7B42BC&link=https%3A%2F%2Fregistry.terraform.io%2Fproviders%2Faficiomaquinas%2Fcloudblast)
+![Terraform Provider Weekly Downloads](https://img.shields.io/terraform/provider/dw/2312176?logo=terraform&logoColor=white&label=Provider%20downloads&color=7B42BC&link=https%3A%2F%2Fregistry.terraform.io%2Fproviders%2Faficiomaquinas%2Fcloudblast) ![Terraform Provider Monthly Downloads](https://img.shields.io/terraform/provider/dm/2312176?logo=terraform&logoColor=white&label=Provider%20downloads&color=7B42BC&link=https%3A%2F%2Fregistry.terraform.io%2Fproviders%2Faficiomaquinas%2Fcloudblast) ![Terraform Provider Yearly Downloads](https://img.shields.io/terraform/provider/dy/2312176?logo=terraform&logoColor=white&label=Provider%20downloads&color=7B42BC&link=https%3A%2F%2Fregistry.terraform.io%2Fproviders%2Faficiomaquinas%2Fcloudblast) ![Terraform Provider Total Downloads](https://img.shields.io/terraform/provider/dt/2312176?logo=terraform&logoColor=white&label=Total%20provider%20downloads&color=7B42BC&link=https%3A%2F%2Fregistry.terraform.io%2Fproviders%2Faficiomaquinas%2Fcloudblast)
 
 A Terraform provider for managing [CloudBlast](https://cloudblast.io) cloud infrastructure — VPS servers, SSH keys, security groups, and firewall rules.
 
